@@ -1,94 +1,321 @@
 import requests
 import argparse
 from bs4 import BeautifulSoup
-import json,sys, time, csv, os
+import json,sys, datetime, csv, base64, pymysql
+from config import *
 
-BASE_URL = "https://search.ipaustralia.gov.au/trademarks/search/view/"
-
-start = time.time()
-isHeader = True
-session = requests.session()
-
-fieldnames = [    'ID',
-                  'Words',
-                  'IR number',
-                  'IR notification',
-                  'Kind',
-                  'Class',
-                  'Filing Date',
-                  'First report Date',
-                  'Registered From Date',
-                  'Registration Advertised Date',
-                  'Acception Advertised Date',
-                  'Acception Date',
-                  'Image',
-                  'Image description',
-                  'Priority Date',
-                  'Renewal Due Date',
-                  'Status',
-                  'Owner',
-                  'Address for service',
-                  'IR Contact',
-                  'History',
-                  'Goods and services',
-                  'Indexing constituents image',
-                  'Indexing constituents word',
-                  'Convention date',
-                  'Convention number',
-                  'Convention country'
-              ]
-
-def elapsed():
-    return time.time() - start
-
-def returnValue(key, dict):
-    return dict[key] if key in dict else ''
-
-def AdjustData(dict):
-    rowdict = {}
-    rowdict['ID'] =  returnValue('ID', dict)
-    rowdict['Words'] = returnValue('Words', dict)
-    rowdict['IR number'] = returnValue('IR number', dict)
-    rowdict['IR notification'] = returnValue('IR notification', dict)
-    rowdict['Kind'] = returnValue('Kind', dict)
-    rowdict['Class'] = dict['Class'] if 'Class' in dict else dict['Classes']
-    rowdict['Filing Date'] = returnValue('Filing', dict)
-    rowdict['First report Date'] = returnValue('First report', dict)
-    rowdict['Registered From Date'] = returnValue('Registered from', dict)
-    rowdict['Registration Advertised Date'] = returnValue('Registration advertised', dict)
-    rowdict['Acception Advertised Date'] = returnValue('Acceptance advertised', dict)
-    rowdict['Acception Date'] = returnValue('Acceptance', dict)
-    rowdict['Image'] = returnValue('Image', dict)
-    rowdict['Image description'] = returnValue('Image description', dict)
-    rowdict['Priority Date'] = returnValue('Priority date', dict)
-    rowdict['Renewal Due Date'] = returnValue('Renewal due', dict)
-    rowdict['Status'] = returnValue('Status', dict)
-    rowdict['Owner'] = returnValue('Owner', dict)
-    rowdict['Address for service'] = returnValue('Address for service', dict)
-    rowdict['IR Contact'] = returnValue('IR Contact', dict)
-    rowdict['History'] = returnValue('History', dict)
-    rowdict['Goods and services'] = returnValue('Goods and services', dict)
-    rowdict['Indexing constituents image'] = returnValue('Indexing constituents image', dict)
-    rowdict['Indexing constituents word'] = returnValue('Indexing constituents word', dict)
-    if 'Convention details' in dict:
-        rowdict['Convention date'] = returnValue('Date', dict['Convention details'])
-        rowdict['Convention number'] = returnValue('Number', dict['Convention details'])
-        rowdict['Convention country'] = returnValue('Country', dict['Convention details'])
+def storeImagetoMYSQL(url):
+    r = requests.get(url=url,stream=True)
+    if r.status_code == 200:
+        with open("image_name.jpg", 'wb') as f:
+            for chunk in r.iter_content(1024):
+                f.write(chunk)
     else:
-        rowdict['Convention date'] = ''
-        rowdict['Convention number'] = ''
-        rowdict['Convention country'] = ''
+        return False
 
-    return rowdict
+    """ Store to db """
+    with open('image_name.jpg', 'rb') as f:
+        photo = f.read()
+        encodestring = base64.b64encode(photo)
+        db = pymysql.connect(user=MYSQL_USER, password=MYSQL_PASS, host=MYSQL_HOST, database=MYSQL_DBNAME)
+        mycursor = db.cursor()
+        sql = "insert into `images_data` (url, `data`) values(%s, %s)"
+        mycursor.execute(sql, (url, encodestring,))
+    db.commit()
+    return True
 
-def ouputCSV(dict, filename, mode):
-    global isHeader
-    with open(filename, mode, newline='\n') as file:
-        csvWriter = csv.DictWriter(file, fieldnames=fieldnames, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
-        if isHeader:
-            csvWriter.writeheader()
-            isHeader = False
-        csvWriter.writerow(dict)
+def createDB():
+    Dbcon = pymysql.connect(MYSQL_HOST, MYSQL_USER, MYSQL_PASS)
+    query = """CREATE DATABASE IF NOT EXISTS `%s`;""" % (MYSQL_DBNAME)
+    dbcur = Dbcon.cursor()
+    try:
+        dbcur.execute(query)
+        Dbcon.commit()
+        print("Database %s was created." %(MYSQL_DBNAME))
+    except:
+        Dbcon.rollback()
+        print(query)
+        print("SQL statement Error")
+    dbcur.close()
+
+
+class TradeMarks():
+    BASE_URL = "https://search.ipaustralia.gov.au/trademarks/search/view/"
+    isHeader = True
+    session = requests.session()
+    fieldnames = ['ID','Words','IR number','IR notification','Kind','Class','Filing Date','First report Date','Registered From Date',
+                  'Registration Advertised Date','Acception Advertised Date','Acception Date','Image','Image description','Priority Date',
+                  'Renewal Due Date','Status','Owner','Address for service','IR Contact','History','Goods and services',
+                  'Indexing constituents image','Indexing constituents word','Convention date','Convention number','Convention country',
+                  ### added newly
+                  'OwnerAddress1','OwnerAddress2','OwnerCity','OwnerState','OwnerPostcode','OwnerCountry',
+                  'ServiceAddress1','ServiceAddress2','ServiceCity','ServiceState','ServicePostcode','ServiceCountry',
+                  'Endorsements'
+                  ]
+    trademark = ""
+    filename = ""
+    isJson = False
+
+    def __init__(self, filename, isJson):
+        self.filename = filename
+        self.isJson = isJson
+
+    def convertDate(self, date):
+        words = date.split(' ')
+        date = datetime.datetime.strptime(" ".join(words[:3]) , '%d %b %Y').strftime('%Y-%m-%d') if len(words) > 2 else ""
+        return date
+
+    def setTrademark(self, trademark):
+        self.trademark = trademark
+
+    def returnValue(self, key, dict):
+        return dict[key] if key in dict else ''
+
+    """ def for parse of addresses """
+    def addressParse(self, address):
+        words = address.split(',')
+        addresses = {
+            "address1" : "","address2" : "",
+            "city" : "","state" : "",
+            "postcode" : "","country" : ""
+        }
+        cnt = len(words)
+        if cnt < 5 :
+            addresses['address1'] = address
+            return addresses
+
+        addresses['city'] = words[cnt-4]
+        addresses['state'] = words[cnt-3]
+        addresses['postcode'] = words[cnt-2]
+        addresses['country'] = words[cnt-1]
+
+        if cnt == 6:
+            addresses['address1'] = words[0]
+            addresses['address2'] = words[1]
+        elif cnt == 5:
+            addresses['address1'] = words[0]
+        else:
+            addresses['address1'] = " ".join(words[0:cnt-6])
+            addresses['address2'] = words[cnt-5]
+        return addresses
+
+    """ Create Dict from retrieve data """
+    def AdjustData(self, dict):
+        rowdict = {}
+        rowdict['ID'] =  self.returnValue('ID', dict).lstrip().rstrip()
+        rowdict['Words'] =  self.returnValue('Words', dict).lstrip().rstrip()
+        rowdict['IR number'] =  self.returnValue('IR number', dict).lstrip().rstrip()
+        rowdict['IR notification'] =  self.returnValue('IR notification', dict).lstrip().rstrip()
+        rowdict['Kind'] =  self.returnValue('Kind', dict).lstrip().rstrip()
+        rowdict['Class'] = dict['Class'].lstrip().rstrip() if 'Class' in dict else dict['Classes'].lstrip().rstrip()
+        rowdict['Filing Date'] =  self.convertDate(self.returnValue('Filing', dict).lstrip().rstrip())
+        rowdict['First report Date'] =  self.convertDate(self.returnValue('First report', dict).lstrip().rstrip())
+        rowdict['Registered From Date'] =  self.convertDate(self.returnValue('Registered from', dict).lstrip().rstrip())
+        rowdict['Registration Advertised Date'] =  self.convertDate(self.returnValue('Registration advertised', dict).lstrip().rstrip())
+        rowdict['Acception Advertised Date'] =  self.convertDate(self.returnValue('Acceptance advertised', dict).lstrip().rstrip())
+        rowdict['Acception Date'] =  self.convertDate(self.returnValue('Acceptance', dict).lstrip().rstrip())
+        rowdict['Image'] =  self.returnValue('Image', dict).lstrip().rstrip()
+        rowdict['Image description'] =  self.returnValue('Image description', dict).lstrip().rstrip()
+        rowdict['Priority Date'] = self.convertDate(self.returnValue('Priority date', dict).lstrip().rstrip())
+        rowdict['Renewal Due Date'] =  self.convertDate(self.returnValue('Renewal due', dict).lstrip().rstrip())
+        rowdict['Status'] =  self.returnValue('Status', dict).lstrip().rstrip()
+        rowdict['Owner'] =  self.returnValue('Owner', dict).lstrip().rstrip()
+        rowdict['Address for service'] =  self.returnValue('Address for service', dict).lstrip().rstrip()
+        rowdict['IR Contact'] =  self.returnValue('IR Contact', dict).lstrip().rstrip()
+        rowdict['History'] =  self.returnValue('History', dict).lstrip().rstrip()
+        rowdict['Goods and services'] =  self.returnValue('Goods and services', dict).lstrip().rstrip()
+        rowdict['Indexing constituents image'] =  self.returnValue('Indexing constituents image', dict).lstrip().rstrip()
+        rowdict['Indexing constituents word'] =  self.returnValue('Indexing constituents word', dict).lstrip().rstrip()
+        if 'Convention details' in dict:
+            rowdict['Convention date'] =  self.convertDate(self.returnValue('Date', dict['Convention details']).lstrip().rstrip())
+            rowdict['Convention number'] =  self.returnValue('Number', dict['Convention details']).lstrip().rstrip()
+            rowdict['Convention country'] =  self.returnValue('Country', dict['Convention details']).lstrip().rstrip()
+        else:
+            rowdict['Convention date'] = ''
+            rowdict['Convention number'] = ''
+            rowdict['Convention country'] = ''
+
+        ### added newly
+        rowdict['OwnerAddress1'] = dict['OwnerAddresses']['address1']
+        rowdict['OwnerAddress2'] = dict['OwnerAddresses']['address2']
+        rowdict['OwnerCity'] = dict['OwnerAddresses']['city']
+        rowdict['OwnerState'] = dict['OwnerAddresses']['state']
+        rowdict['OwnerPostcode'] = dict['OwnerAddresses']['postcode']
+        rowdict['OwnerCountry'] = dict['OwnerAddresses']['country']
+
+        rowdict['ServiceAddress1'] = dict['ServiceAddress']['address1']
+        rowdict['ServiceAddress2'] = dict['ServiceAddress']['address2']
+        rowdict['ServiceCity'] = dict['ServiceAddress']['city']
+        rowdict['ServiceState'] = dict['ServiceAddress']['state']
+        rowdict['ServicePostcode'] = dict['ServiceAddress']['postcode']
+        rowdict['ServiceCountry'] = dict['ServiceAddress']['country']
+
+        rowdict['Endorsements'] = self.returnValue('Endorsements', dict).lstrip().rstrip()
+        return rowdict
+
+    def scrap(self):
+        print(self.trademark)
+        url = self.BASE_URL + self.trademark + "/details??a=1&h=1&e=1"
+        res = self.session.get(url)
+        soup = BeautifulSoup(res.text, "html.parser")
+        divs = soup.find_all('div', {'class': 'box-with-shadow'})
+        extracted_data = {'ID': self.trademark}
+
+        """ Step 1. Retrieve First table in first Div:  Words, Image, Image description, Status, Priority date, Class(Classes), Kind"""
+        table_bodys = divs[0].find_all('table')
+        trs = table_bodys[1].find_all('tr')
+
+        for tr in trs:
+            key = tr.find('th').text.replace('\n', '')
+            value = tr.find('td').text.replace('\n', ' ')
+            if key == '': continue
+            extracted_data[key] = value
+        ## especially get image url
+        imagetags = table_bodys[1].find_all('img')
+        iamge_urls = []
+        for image in imagetags:
+            iamge_urls.append(image.get('src').replace('\n', ' '))
+        ## especially get video url
+        images = table_bodys[1].find_all('video')
+        for image in images:
+            iamge_urls.append(image.get('src').replace('\n', ' '))
+        extracted_data['Image'] = "||".join(iamge_urls)
+
+        """ Step 2.  Retrieve Second table in first Div: Dates
+        {
+            Renewal due, Registration advertised, Entered on Register, Acceptance advertised, Acceptance, Filing, Registered from
+        }
+        """
+
+        trs = table_bodys[2].find_all('tr')
+        for tr in trs:
+            tds = tr.find_all('td')
+            if len(tds) == 1: continue
+            key = tds[0].text.replace('\n', '')
+            value = tds[1].text.replace('\n', ' ')
+            if key == '': continue
+            extracted_data[key] = value
+
+        """ Step 3. Retrieve in Second Div : Owner, Address for service """
+        tds = divs[1].find_all('td')
+        OwnerName = tds[0].find('span', {'class': 'party-name'}).text.replace('\n', ' ')
+        OwnerAddress = tds[0].find('div', {'class' : 'js-address'}).text.replace('\n',',').replace(',,',',').lstrip(',').rstrip(',') #.replace('\n',' ')
+        Owner = OwnerName + "/" + OwnerAddress
+        extracted_data['Owner'] = Owner
+        extracted_data['OwnerAddresses'] = self.addressParse(OwnerAddress)
+
+        AddressforServiceName = tds[1].find('span', {'class': 'party-name'}).text.replace('\n','')
+        AddressforServiceAddress = tds[1].find('div', {'class' : 'js-address'}).text.replace('\n',',').replace(',,',',').lstrip(',').rstrip(',')
+        extracted_data['Address for service'] = AddressforServiceName + "/" + AddressforServiceAddress
+        extracted_data['ServiceAddress'] = self.addressParse(AddressforServiceAddress)
+
+        """ Step 4. Retreive Third Div : Goods & Services"""
+        goods_services = soup.find_all("div", {'class': 'box-with-shadow long-content-container'})[0].find_all('div', {'class': 'goods-service'})
+        values = []
+        for services in goods_services:
+            values.append(services.text.replace('\n', ' '))
+        extracted_data['Goods and services'] = "||".join(values)
+
+        """ Step 5. Extract IR Contact """
+        if len(divs[2].get('class')) == 1:
+            trs = divs[2].find_all('tr')
+            if len(trs) > 1:
+                extracted_data['IR Contact'] = trs[1].text.replace('\n', ' ')
+
+        """ Step 6. get all data of div with class name  'box-with-shadow' """
+        for i in range(3, len(divs)):
+            if len(divs[i].get('class')) == 1:
+                trs = divs[i].find_all('tr')
+                if len(trs) > 0:
+                    key_dict = trs[0].find('th').text.replace('\n', '')
+                    value_dicts = {}
+                    for tr in trs:
+                        tds = tr.find_all('td')
+                        if len(tds) == 1: continue
+                        key = tds[0].text.replace('\n', '')
+                        value = tds[1].text.replace('\n', ' ').replace('"', "'")
+                        value_dicts[key] = value
+                    extracted_data[key_dict] = value_dicts
+
+        """ Get Convention details	 """
+        for i in range(3, len(divs)):
+            if 'Endorsements' in divs[i].text:
+                values = ""
+                trs = divs[i].find_all('tr')
+                for j in range(1, len(trs)):
+                    title = trs[j].find("th").text.replace('\n', '')
+                    value = trs[j].find('td').text.replace('\n', '')
+                    values += title + " - " + value + ','
+                extracted_data['Endorsements'] = values
+            else:
+                extracted_data['Endorsements'] = ""
+
+        """ Step 7. History and publication details """
+        tbodys = soup.find('div', id='toggleHistoryTable').find_all('tbody')
+        history = []
+        for tbody in tbodys:
+            trs = tbody.find_all('tr')
+            tds = tbody.find_all('td')
+            if len(tds) == 0: continue
+            key = self.convertDate(tds[0].text.replace('\n', ''))
+            value = tds[1].text.replace('\n', ' ')
+            history.append(' - '.join([key, value]))
+
+            if len(trs) > 1:
+                ps = trs[1].find_all('p')
+                pubvalue = ""
+                for p in ps:
+                    pubval = p.text.replace('\n', ' ')
+                    pubvalue = pubvalue + pubval
+                history.append(pubvalue)
+        extracted_data['History'] = '||'.join(history)
+
+        """ Step 8. Get Indexing constituents """
+        tables = soup.find('div', {'class': 'box-with-shadow row cf'}).find_all('table')
+        if len(tables) > 1:
+            ## get Words
+            words = []
+            trs = tables[0].find_all('tr')
+            for tr in trs:
+                tds = tr.find_all('td')
+                if len(tds) > 1:
+                    snippet = ":".join([tds[0].text.replace('\n', ' '), tds[1].text.replace('\n', ' ')])
+                else:
+                    snippet = ":".join([tds[0].text.replace('\n', ' ')])
+                words.append(snippet)
+            ## get Image
+            images = []
+            trs = tables[1].find_all('tr')
+            for tr in trs:
+                tds = tr.find_all('td')
+                if len(tds) > 1:
+                    snippet = "-".join([tds[0].text.replace('\n', ' '), tds[1].text.replace('\n', ' ')])
+                else:
+                    snippet = "-".join([tds[0].text.replace('\n', ' ')])
+                images.append(snippet)
+            extracted_data['Indexing constituents image'] = "||".join(images)
+            extracted_data['Indexing constituents word'] = "||".join(words)
+
+        """ create dict from extracted_data """
+        rowdict = self.AdjustData(extracted_data)
+
+        if self.isJson:
+            print(json.dumps(rowdict))
+        else:
+            self.ouputCSV(rowdict)
+        return rowdict
+
+    def ouputCSV(self, dict):
+        if self.isHeader:
+            mode = 'w'
+        else:
+            mode = 'a'
+        with open(self.filename, mode, newline='\n') as file:
+            csvWriter = csv.DictWriter(file, fieldnames=self.fieldnames, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
+            if self.isHeader:
+                csvWriter.writeheader()
+                self.isHeader = False
+            csvWriter.writerow(dict)
 
 def argsParse():
     parser = argparse.ArgumentParser()
@@ -98,141 +325,6 @@ def argsParse():
     parser.add_argument('--json', help="output json format", default=True)
     return vars(parser.parse_args())
 
-def scrap_Unit(trademark, filename):
-    print(trademark)
-    url = BASE_URL + trademark + "/details??a=1&h=1"
-    res = session.get(url)
-    soup = BeautifulSoup(res.text, "html.parser")
-    divs = soup.find_all('div', {'class': 'box-with-shadow'})
-    extracted_data = {'ID' : trademark}
-
-    """ Step 1. Retrieve First table in first Div:  Words, Image, Image description, Status, Priority date, Class(Classes), Kind"""
-    table_bodys = divs[0].find_all('table')
-    trs = table_bodys[1].find_all('tr')
-
-    for tr in trs:
-        key = tr.find('th').text.replace('\n', '')
-        value = tr.find('td').text.replace('\n', ' ')
-        if key == '': continue
-        extracted_data[key] = value
-    ## especially get image url
-    imagetags = table_bodys[1].find_all('img')
-    iamge_urls = []
-    for image in imagetags:
-        iamge_urls.append(image.get('src').replace('\n', ' '))
-    ## especially get video url
-    images = table_bodys[1].find_all('video')
-    for image in images:
-        iamge_urls.append(image.get('src').replace('\n', ' '))
-    extracted_data['Image'] = "||" .join(iamge_urls)
-
-    """ Step 2.  Retrieve Second table in first Div: Dates
-    {
-        Renewal due, Registration advertised, Entered on Register, Acceptance advertised, Acceptance, Filing, Registered from
-    }
-    """
-    trs = table_bodys[2].find_all('tr')
-    for tr in trs:
-        tds = tr.find_all('td')
-        if len(tds) == 1: continue
-        key = tds[0].text.replace('\n', '')
-        value = tds[1].text.replace('\n', ' ')
-        if key == '': continue
-        extracted_data[key] = value
-
-    """ Step 3. Retrieve in Second Div : Owner, Address for service """
-    tds = divs[1].find_all('td')
-    Owner = tds[0].text.replace('\n', ' ')
-    Address = tds[1].text.replace('\n', ' ')
-    extracted_data['Owner'] = Owner
-    extracted_data['Address for service'] = Address
-
-    """ Step 4. Retreive Third Div : Goods & Services"""
-    goods_services = soup.find_all("div", {'class': 'box-with-shadow long-content-container'})[0]\
-                         .find_all('div', {'class': 'goods-service'})
-    values = []
-    for services in goods_services:
-        values.append(services.text.replace('\n', ' '))
-    extracted_data['Goods and services'] = "||".join(values)
-
-    """ Step 5. Extract IR Contact """
-    if len(divs[2].get('class'))==1:
-        trs = divs[2].find_all('tr')
-        if len(trs) > 1:
-            extracted_data['IR Contact'] = trs[1].text.replace('\n',' ')
-
-    """
-        Step 6.
-        get all data of div with class name  'box-with-shadow'
-    """
-    for i in range(3, len(divs)):
-        if len(divs[i].get('class')) == 1:
-            trs = divs[i].find_all('tr')
-            if len(trs)>0:
-                key_dict = trs[0].find('th').text.replace('\n', '')
-                value_dicts = {}
-                for tr in trs:
-                    tds = tr.find_all('td')
-                    if len(tds) == 1: continue
-                    key = tds[0].text.replace('\n', '')
-                    value = tds[1].text.replace('\n', ' ').replace('"',"'")
-                    value_dicts[key] = value
-                extracted_data[key_dict] = value_dicts
-
-    """ Step 7. History and publication details """
-    tbodys = soup.find('div', id='toggleHistoryTable').find_all('tbody')
-    history = []
-    for tbody in tbodys:
-        trs = tbody.find_all('tr')
-        tds = tbody.find_all('td')
-        if len(tds) == 0: continue
-        key = tds[0].text.replace('\n', '')
-        value = tds[1].text.replace('\n', ' ')
-        history.append('-'.join([key, value]))
-
-        if len(trs) > 1:
-            ps = trs[1].find_all('p')
-            pubvalue = ""
-            for p in ps:
-                pubval = p.text.replace('\n',' ')
-                pubvalue = pubvalue + pubval
-            history.append(pubvalue)
-    extracted_data['History'] = '||'.join(history)
-
-    """ Step 8. Get Indexing constituents """
-    tables = soup.find('div',{'class':'box-with-shadow row cf'}).find_all('table')
-    if len(tables) > 1:
-        ## get Words
-        words = []
-        trs = tables[0].find_all('tr')
-        for tr in trs:
-            tds = tr.find_all('td')
-            if len(tds) > 1:
-                snippet = ":".join([tds[0].text.replace('\n', ' '),tds[1].text.replace('\n', ' ')])
-            else:
-                snippet = ":".join([tds[0].text.replace('\n', ' ')])
-            words.append(snippet)
-        ## get Image
-        images = []
-        trs = tables[1].find_all('tr')
-        for tr in trs:
-            tds = tr.find_all('td')
-            if len(tds) > 1:
-                snippet = "-".join([tds[0].text.replace('\n', ' '), tds[1].text.replace('\n', ' ')])
-            else:
-                snippet = "-".join([tds[0].text.replace('\n', ' ')])
-            images.append(snippet)
-        extracted_data['Indexing constituents image'] = "||".join(images)
-        extracted_data['Indexing constituents word'] = "||".join(words)
-
-    """ create dict from extracted_data """
-    rowdict = AdjustData(extracted_data)
-
-    """ Output as csv or json """
-    if filename:
-        ouputCSV(rowdict,filename, 'a')
-    else:
-        print(json.dumps(rowdict))
 
 if __name__ == "__main__":
     args = argsParse()
@@ -240,20 +332,29 @@ if __name__ == "__main__":
     """
     # args for test
     args = {
-        'csv' : 'outut.csv',
-        'trademark' : '1594492',
-        'verbose' : 'id'
+        'csv' : None,
+        'trademark' : '1807817',
+        'verbose' : 'id',
+        'json' : True
     }
     """
     if args['csv'] == None and args['json']==None:
         print("--csv or --json required")
         sys.exit()
+
     print("start scraping")
+
+    if args['csv'] != None:
+        trades = TradeMarks(filename=args['csv'], isJson=False)
+    else:
+        trades = TradeMarks(filename=args['csv'], isJson=True)
+
     if args['verbose'] == 'file':
         file = open(args['trademark'], 'r')
         for line in file.readlines():
-            scrap_Unit(line.strip(), args['csv'])
+            trades.setTrademark(line.strip())
+            trades.scrap()
     else:
-        scrap_Unit(args['trademark'], args['csv'])
-
-    print("Finish %.3fs" % (elapsed()))
+        trades.setTrademark(args['trademark'])
+        trades.scrap()
+    print("Finish ...")
