@@ -1,43 +1,8 @@
 import requests
 import argparse
 from bs4 import BeautifulSoup
-import json,sys, datetime, csv, base64, pymysql
-from config import *
-
-def storeImagetoMYSQL(url):
-    r = requests.get(url=url,stream=True)
-    if r.status_code == 200:
-        with open("image_name.jpg", 'wb') as f:
-            for chunk in r.iter_content(1024):
-                f.write(chunk)
-    else:
-        return False
-
-    """ Store to db """
-    with open('image_name.jpg', 'rb') as f:
-        photo = f.read()
-        encodestring = base64.b64encode(photo)
-        db = pymysql.connect(user=MYSQL_USER, password=MYSQL_PASS, host=MYSQL_HOST, database=MYSQL_DBNAME)
-        mycursor = db.cursor()
-        sql = "insert into `images_data` (url, `data`) values(%s, %s)"
-        mycursor.execute(sql, (url, encodestring,))
-    db.commit()
-    return True
-
-def createDB():
-    Dbcon = pymysql.connect(MYSQL_HOST, MYSQL_USER, MYSQL_PASS)
-    query = """CREATE DATABASE IF NOT EXISTS `%s`;""" % (MYSQL_DBNAME)
-    dbcur = Dbcon.cursor()
-    try:
-        dbcur.execute(query)
-        Dbcon.commit()
-        print("Database %s was created." %(MYSQL_DBNAME))
-    except:
-        Dbcon.rollback()
-        print(query)
-        print("SQL statement Error")
-    dbcur.close()
-
+import json,sys, datetime, csv
+from importDB import TradeDB
 
 class TradeMarks():
     BASE_URL = "https://search.ipaustralia.gov.au/trademarks/search/view/"
@@ -69,7 +34,7 @@ class TradeMarks():
         self.trademark = trademark
 
     def returnValue(self, key, dict):
-        return dict[key] if key in dict else ''
+        return dict[key].encode('ascii','ignore') if key in dict else ''
 
     """ def for parse of addresses """
     def addressParse(self, address):
@@ -107,14 +72,14 @@ class TradeMarks():
         rowdict['IR number'] =  self.returnValue('IR number', dict).lstrip().rstrip()
         rowdict['IR notification'] =  self.returnValue('IR notification', dict).lstrip().rstrip()
         rowdict['Kind'] =  self.returnValue('Kind', dict).lstrip().rstrip()
-        rowdict['Class'] = dict['Class'].lstrip().rstrip() if 'Class' in dict else dict['Classes'].lstrip().rstrip()
+        rowdict['Class'] = dict['Class'].lstrip().rstrip().encode('ascii','ignore') if 'Class' in dict else dict['Classes'].lstrip().rstrip().encode('ascii','ignore')
         rowdict['Filing Date'] =  self.convertDate(self.returnValue('Filing', dict).lstrip().rstrip())
         rowdict['First report Date'] =  self.convertDate(self.returnValue('First report', dict).lstrip().rstrip())
         rowdict['Registered From Date'] =  self.convertDate(self.returnValue('Registered from', dict).lstrip().rstrip())
         rowdict['Registration Advertised Date'] =  self.convertDate(self.returnValue('Registration advertised', dict).lstrip().rstrip())
         rowdict['Acception Advertised Date'] =  self.convertDate(self.returnValue('Acceptance advertised', dict).lstrip().rstrip())
         rowdict['Acception Date'] =  self.convertDate(self.returnValue('Acceptance', dict).lstrip().rstrip())
-        rowdict['Image'] =  self.returnValue('Image', dict).lstrip().rstrip()
+        rowdict['Image'] =  self.returnValue('Image', dict).lstrip().rstrip().replace('MEDIUM','LARGE')
         rowdict['Image description'] =  self.returnValue('Image description', dict).lstrip().rstrip()
         rowdict['Priority Date'] = self.convertDate(self.returnValue('Priority date', dict).lstrip().rstrip())
         rowdict['Renewal Due Date'] =  self.convertDate(self.returnValue('Renewal due', dict).lstrip().rstrip())
@@ -136,19 +101,19 @@ class TradeMarks():
             rowdict['Convention country'] = ''
 
         ### added newly
-        rowdict['OwnerAddress1'] = dict['OwnerAddresses']['address1']
-        rowdict['OwnerAddress2'] = dict['OwnerAddresses']['address2']
-        rowdict['OwnerCity'] = dict['OwnerAddresses']['city']
-        rowdict['OwnerState'] = dict['OwnerAddresses']['state']
-        rowdict['OwnerPostcode'] = dict['OwnerAddresses']['postcode']
-        rowdict['OwnerCountry'] = dict['OwnerAddresses']['country']
+        rowdict['OwnerAddress1'] = dict['OwnerAddresses']['address1'].encode('ascii','ignore')
+        rowdict['OwnerAddress2'] = dict['OwnerAddresses']['address2'].encode('ascii','ignore')
+        rowdict['OwnerCity'] = dict['OwnerAddresses']['city'].encode('ascii','ignore')
+        rowdict['OwnerState'] = dict['OwnerAddresses']['state'].encode('ascii','ignore')
+        rowdict['OwnerPostcode'] = dict['OwnerAddresses']['postcode'].encode('ascii','ignore')
+        rowdict['OwnerCountry'] = dict['OwnerAddresses']['country'].encode('ascii','ignore')
 
-        rowdict['ServiceAddress1'] = dict['ServiceAddress']['address1']
-        rowdict['ServiceAddress2'] = dict['ServiceAddress']['address2']
-        rowdict['ServiceCity'] = dict['ServiceAddress']['city']
-        rowdict['ServiceState'] = dict['ServiceAddress']['state']
-        rowdict['ServicePostcode'] = dict['ServiceAddress']['postcode']
-        rowdict['ServiceCountry'] = dict['ServiceAddress']['country']
+        rowdict['ServiceAddress1'] = dict['ServiceAddress']['address1'].encode('ascii','ignore')
+        rowdict['ServiceAddress2'] = dict['ServiceAddress']['address2'].encode('ascii','ignore')
+        rowdict['ServiceCity'] = dict['ServiceAddress']['city'].encode('ascii','ignore')
+        rowdict['ServiceState'] = dict['ServiceAddress']['state'].encode('ascii','ignore')
+        rowdict['ServicePostcode'] = dict['ServiceAddress']['postcode'].encode('ascii','ignore')
+        rowdict['ServiceCountry'] = dict['ServiceAddress']['country'].encode('ascii','ignore')
 
         rowdict['Endorsements'] = self.returnValue('Endorsements', dict).lstrip().rstrip()
         return rowdict
@@ -170,6 +135,7 @@ class TradeMarks():
             value = tr.find('td').text.replace('\n', ' ')
             if key == '': continue
             extracted_data[key] = value
+
         ## especially get image url
         imagetags = table_bodys[1].find_all('img')
         iamge_urls = []
@@ -204,8 +170,13 @@ class TradeMarks():
         extracted_data['Owner'] = Owner
         extracted_data['OwnerAddresses'] = self.addressParse(OwnerAddress)
 
-        AddressforServiceName = tds[1].find('span', {'class': 'party-name'}).text.replace('\n','')
-        AddressforServiceAddress = tds[1].find('div', {'class' : 'js-address'}).text.replace('\n',',').replace(',,',',').lstrip(',').rstrip(',')
+        try:
+            AddressforServiceName = tds[1].find('span', {'class': 'party-name'}).text.replace('\n','')
+            AddressforServiceAddress = tds[1].find('div', {'class': 'js-address'}).text.replace('\n', ',').replace(',,',',').lstrip(',').rstrip(',')
+        except:
+            AddressforServiceName = ""
+            AddressforServiceAddress = ""
+
         extracted_data['Address for service'] = AddressforServiceName + "/" + AddressforServiceAddress
         extracted_data['ServiceAddress'] = self.addressParse(AddressforServiceAddress)
 
@@ -310,7 +281,7 @@ class TradeMarks():
             mode = 'w'
         else:
             mode = 'a'
-        with open(self.filename, mode, newline='\n') as file:
+        with open(self.filename, mode) as file:
             csvWriter = csv.DictWriter(file, fieldnames=self.fieldnames, delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
             if self.isHeader:
                 csvWriter.writeheader()
@@ -332,10 +303,10 @@ if __name__ == "__main__":
     """
     # args for test
     args = {
-        'csv' : None,
-        'trademark' : '1807817',
+        'csv' : "out.csv",
+        'trademark' : '1805224',
         'verbose' : 'id',
-        'json' : True
+        'json' : False
     }
     """
     if args['csv'] == None and args['json']==None:
@@ -357,4 +328,12 @@ if __name__ == "__main__":
     else:
         trades.setTrademark(args['trademark'])
         trades.scrap()
+
+    if args['csv']:
+        trade = TradeDB(args['csv'])
+        trade.creatTables()
+        trade.importCSV()
+        trade.storeImagetoDB()
+
     print("Finish ...")
+
