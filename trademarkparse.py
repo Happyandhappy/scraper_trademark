@@ -34,7 +34,7 @@ class TradeMarks():
         self.trademark = trademark
 
     def returnValue(self, key, dict):
-        return dict[key].encode('ascii','ignore').lstrip().rstrip() if key in dict else ''
+        return dict[key].encode('ascii','ignore').decode("utf-8").lstrip().rstrip() if key in dict else ''
 
     """ def for parse of addresses """
     def addressParse(self, address):
@@ -117,7 +117,7 @@ class TradeMarks():
         rowdict['Endorsements'] = self.returnValue('Endorsements', dict)
 
         for name in self.fieldnames:
-            rowdict[name] = rowdict[name].lstrip().rstrip().encode('ascii','ignore')
+            rowdict[name] = rowdict[name].lstrip().rstrip().encode('ascii','ignore').decode("utf-8")
         return rowdict
 
     def scrap(self):
