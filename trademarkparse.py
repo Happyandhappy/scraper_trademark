@@ -34,7 +34,7 @@ class TradeMarks():
         self.trademark = trademark
 
     def returnValue(self, key, dict):
-        return dict[key].encode('ascii','ignore') if key in dict else ''
+        return dict[key].encode('ascii','ignore').lstrip().rstrip() if key in dict else ''
 
     """ def for parse of addresses """
     def addressParse(self, address):
@@ -67,55 +67,57 @@ class TradeMarks():
     """ Create Dict from retrieve data """
     def AdjustData(self, dict):
         rowdict = {}
-        rowdict['ID'] =  self.returnValue('ID', dict).lstrip().rstrip()
-        rowdict['Words'] =  self.returnValue('Words', dict).lstrip().rstrip()
-        rowdict['IR number'] =  self.returnValue('IR number', dict).lstrip().rstrip()
-        rowdict['IR notification'] =  self.returnValue('IR notification', dict).lstrip().rstrip()
-        rowdict['Kind'] =  self.returnValue('Kind', dict).lstrip().rstrip()
-        rowdict['Class'] = dict['Class'].lstrip().rstrip().encode('ascii','ignore') if 'Class' in dict else dict['Classes'].lstrip().rstrip().encode('ascii','ignore')
-        rowdict['Filing Date'] =  self.convertDate(self.returnValue('Filing', dict).lstrip().rstrip())
-        rowdict['First report Date'] =  self.convertDate(self.returnValue('First report', dict).lstrip().rstrip())
-        rowdict['Registered From Date'] =  self.convertDate(self.returnValue('Registered from', dict).lstrip().rstrip())
-        rowdict['Registration Advertised Date'] =  self.convertDate(self.returnValue('Registration advertised', dict).lstrip().rstrip())
-        rowdict['Acception Advertised Date'] =  self.convertDate(self.returnValue('Acceptance advertised', dict).lstrip().rstrip())
-        rowdict['Acception Date'] =  self.convertDate(self.returnValue('Acceptance', dict).lstrip().rstrip())
-        rowdict['Image'] =  self.returnValue('Image', dict).lstrip().rstrip().replace('MEDIUM','LARGE')
-        rowdict['Image description'] =  self.returnValue('Image description', dict).lstrip().rstrip()
-        rowdict['Priority Date'] = self.convertDate(self.returnValue('Priority date', dict).lstrip().rstrip())
-        rowdict['Renewal Due Date'] =  self.convertDate(self.returnValue('Renewal due', dict).lstrip().rstrip())
-        rowdict['Status'] =  self.returnValue('Status', dict).lstrip().rstrip()
-        rowdict['Owner'] =  self.returnValue('Owner', dict).lstrip().rstrip()
-        rowdict['Address for service'] =  self.returnValue('Address for service', dict).lstrip().rstrip()
-        rowdict['IR Contact'] =  self.returnValue('IR Contact', dict).lstrip().rstrip()
-        rowdict['History'] =  self.returnValue('History', dict).lstrip().rstrip()
-        rowdict['Goods and services'] =  self.returnValue('Goods and services', dict).lstrip().rstrip()
-        rowdict['Indexing constituents image'] =  self.returnValue('Indexing constituents image', dict).lstrip().rstrip()
-        rowdict['Indexing constituents word'] =  self.returnValue('Indexing constituents word', dict).lstrip().rstrip()
+        rowdict['ID'] =  self.returnValue('ID', dict)
+        rowdict['Words'] =  self.returnValue('Words', dict)
+        rowdict['IR number'] =  self.returnValue('IR number', dict)
+        rowdict['IR notification'] =  self.returnValue('IR notification', dict)
+        rowdict['Kind'] =  self.returnValue('Kind', dict)
+        rowdict['Class'] = dict['Class'] if 'Class' in dict else dict['Classes']
+        rowdict['Filing Date'] =  self.convertDate(self.returnValue('Filing', dict))
+        rowdict['First report Date'] =  self.convertDate(self.returnValue('First report', dict))
+        rowdict['Registered From Date'] =  self.convertDate(self.returnValue('Registered from', dict))
+        rowdict['Registration Advertised Date'] =  self.convertDate(self.returnValue('Registration advertised', dict))
+        rowdict['Acception Advertised Date'] =  self.convertDate(self.returnValue('Acceptance advertised', dict))
+        rowdict['Acception Date'] =  self.convertDate(self.returnValue('Acceptance', dict))
+        rowdict['Image'] =  self.returnValue('Image', dict).replace('MEDIUM','LARGE')
+        rowdict['Image description'] =  self.returnValue('Image description', dict)
+        rowdict['Priority Date'] = self.convertDate(self.returnValue('Priority date', dict))
+        rowdict['Renewal Due Date'] =  self.convertDate(self.returnValue('Renewal due', dict))
+        rowdict['Status'] =  self.returnValue('Status', dict)
+        rowdict['Owner'] =  self.returnValue('Owner', dict)
+        rowdict['Address for service'] =  self.returnValue('Address for service', dict)
+        rowdict['IR Contact'] =  self.returnValue('IR Contact', dict)
+        rowdict['History'] =  self.returnValue('History', dict)
+        rowdict['Goods and services'] =  self.returnValue('Goods and services', dict)
+        rowdict['Indexing constituents image'] =  self.returnValue('Indexing constituents image', dict)
+        rowdict['Indexing constituents word'] =  self.returnValue('Indexing constituents word', dict)
         if 'Convention details' in dict:
-            rowdict['Convention date'] =  self.convertDate(self.returnValue('Date', dict['Convention details']).lstrip().rstrip())
-            rowdict['Convention number'] =  self.returnValue('Number', dict['Convention details']).lstrip().rstrip()
-            rowdict['Convention country'] =  self.returnValue('Country', dict['Convention details']).lstrip().rstrip()
+            rowdict['Convention date'] =  self.convertDate(self.returnValue('Date', dict['Convention details']))
+            rowdict['Convention number'] =  self.returnValue('Number', dict['Convention details'])
+            rowdict['Convention country'] =  self.returnValue('Country', dict['Convention details'])
         else:
             rowdict['Convention date'] = ''
             rowdict['Convention number'] = ''
             rowdict['Convention country'] = ''
 
         ### added newly
-        rowdict['OwnerAddress1'] = dict['OwnerAddresses']['address1'].encode('ascii','ignore')
-        rowdict['OwnerAddress2'] = dict['OwnerAddresses']['address2'].encode('ascii','ignore')
-        rowdict['OwnerCity'] = dict['OwnerAddresses']['city'].encode('ascii','ignore')
-        rowdict['OwnerState'] = dict['OwnerAddresses']['state'].encode('ascii','ignore')
-        rowdict['OwnerPostcode'] = dict['OwnerAddresses']['postcode'].encode('ascii','ignore')
-        rowdict['OwnerCountry'] = dict['OwnerAddresses']['country'].encode('ascii','ignore')
+        rowdict['OwnerAddress1'] = dict['OwnerAddresses']['address1']
+        rowdict['OwnerAddress2'] = dict['OwnerAddresses']['address2']
+        rowdict['OwnerCity'] = dict['OwnerAddresses']['city']
+        rowdict['OwnerState'] = dict['OwnerAddresses']['state']
+        rowdict['OwnerPostcode'] = dict['OwnerAddresses']['postcode']
+        rowdict['OwnerCountry'] = dict['OwnerAddresses']['country']
 
-        rowdict['ServiceAddress1'] = dict['ServiceAddress']['address1'].encode('ascii','ignore')
-        rowdict['ServiceAddress2'] = dict['ServiceAddress']['address2'].encode('ascii','ignore')
-        rowdict['ServiceCity'] = dict['ServiceAddress']['city'].encode('ascii','ignore')
-        rowdict['ServiceState'] = dict['ServiceAddress']['state'].encode('ascii','ignore')
-        rowdict['ServicePostcode'] = dict['ServiceAddress']['postcode'].encode('ascii','ignore')
-        rowdict['ServiceCountry'] = dict['ServiceAddress']['country'].encode('ascii','ignore')
+        rowdict['ServiceAddress1'] = dict['ServiceAddress']['address1']
+        rowdict['ServiceAddress2'] = dict['ServiceAddress']['address2']
+        rowdict['ServiceCity'] = dict['ServiceAddress']['city']
+        rowdict['ServiceState'] = dict['ServiceAddress']['state']
+        rowdict['ServicePostcode'] = dict['ServiceAddress']['postcode']
+        rowdict['ServiceCountry'] = dict['ServiceAddress']['country']
+        rowdict['Endorsements'] = self.returnValue('Endorsements', dict)
 
-        rowdict['Endorsements'] = self.returnValue('Endorsements', dict).lstrip().rstrip()
+        for name in self.fieldnames:
+            rowdict[name] = rowdict[name].lstrip().rstrip().encode('ascii','ignore')
         return rowdict
 
     def scrap(self):

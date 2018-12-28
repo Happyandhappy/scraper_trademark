@@ -48,6 +48,17 @@ class TradeDB():
                     self.Dbcon.commit()
                     mycursor.close()
 
+    """ Prototype function to retrieve image from database """
+    def retriveImagefromDB(self):
+        query = "select * from `images`"
+        cursor = self.Dbcon.cursor()
+        cursor.execute(query)
+        data = cursor.fetchall()
+        imagestring = data[0][0]
+        imagedata = base64.b64decode(imagestring)
+        with open("out.jpg", 'wb') as f:
+            f.write(imagedata)
+
     def createDB(self):
         query = """CREATE DATABASE IF NOT EXISTS `%s`;""" % (MYSQL_DBNAME)
         dbcur = self.Dbcon.cursor()
