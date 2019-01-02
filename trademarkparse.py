@@ -4,6 +4,8 @@ from bs4 import BeautifulSoup
 import json,sys, datetime, csv
 from importDB import TradeDB
 
+
+
 class TradeMarks():
     BASE_URL = "https://search.ipaustralia.gov.au/trademarks/search/view/"
     isHeader = True
