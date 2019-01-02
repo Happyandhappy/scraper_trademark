@@ -13,8 +13,8 @@ class TradeMarks():
                   'Renewal Due Date','Status','Owner','Address for service','IR Contact','History','Goods and services',
                   'Indexing constituents image','Indexing constituents word','Convention date','Convention number','Convention country',
                   ### added newly
-                  'OwnerAddress1','OwnerAddress2','OwnerCity','OwnerState','OwnerPostcode','OwnerCountry',
-                  'ServiceAddress1','ServiceAddress2','ServiceCity','ServiceState','ServicePostcode','ServiceCountry',
+                  'OwnerName','OwnerAddress1','OwnerAddress2','OwnerCity','OwnerState','OwnerPostcode','OwnerCountry',
+                  'ServiceName','ServiceAddress1','ServiceAddress2','ServiceCity','ServiceState','ServicePostcode','ServiceCountry',
                   'Endorsements'
                   ]
     trademark = ""
@@ -101,6 +101,7 @@ class TradeMarks():
             rowdict['Convention country'] = ''
 
         ### added newly
+        rowdict['OwnerName'] = self.returnValue('OwnerName', dict)
         rowdict['OwnerAddress1'] = dict['OwnerAddresses']['address1']
         rowdict['OwnerAddress2'] = dict['OwnerAddresses']['address2']
         rowdict['OwnerCity'] = dict['OwnerAddresses']['city']
@@ -108,6 +109,7 @@ class TradeMarks():
         rowdict['OwnerPostcode'] = dict['OwnerAddresses']['postcode']
         rowdict['OwnerCountry'] = dict['OwnerAddresses']['country']
 
+        rowdict['ServiceName'] = self.returnValue('ServiceName', dict)
         rowdict['ServiceAddress1'] = dict['ServiceAddress']['address1']
         rowdict['ServiceAddress2'] = dict['ServiceAddress']['address2']
         rowdict['ServiceCity'] = dict['ServiceAddress']['city']
@@ -170,6 +172,7 @@ class TradeMarks():
         OwnerAddress = tds[0].find('div', {'class' : 'js-address'}).text.replace('\n',',').replace(',,',',').lstrip(',').rstrip(',') #.replace('\n',' ')
         Owner = OwnerName + "/" + OwnerAddress
         extracted_data['Owner'] = Owner
+        extracted_data['OwnerName'] = OwnerName
         extracted_data['OwnerAddresses'] = self.addressParse(OwnerAddress)
 
         try:
@@ -178,7 +181,7 @@ class TradeMarks():
         except:
             AddressforServiceName = ""
             AddressforServiceAddress = ""
-
+        extracted_data['ServiceName'] = AddressforServiceName
         extracted_data['Address for service'] = AddressforServiceName + "/" + AddressforServiceAddress
         extracted_data['ServiceAddress'] = self.addressParse(AddressforServiceAddress)
 
@@ -296,6 +299,7 @@ def argsParse():
     parser.add_argument('--trademark', required=True, help='trademark number or file with trademark list')
     parser.add_argument('--csv', help="output csv file name; format: result.csv")
     parser.add_argument('--json', help="output json format", default=True)
+    parser.add_argument('--mysql', help="flag of mysql", default=False)
     return vars(parser.parse_args())
 
 
@@ -331,7 +335,7 @@ if __name__ == "__main__":
         trades.setTrademark(args['trademark'])
         trades.scrap()
 
-    if args['csv']:
+    if args['mysql'] and args['csv']:
         trade = TradeDB(args['csv'])
         trade.creatTables()
         trade.importCSV()
